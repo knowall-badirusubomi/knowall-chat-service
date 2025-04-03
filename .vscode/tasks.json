@@ -1,0 +1,19 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run chatbot",
+			"type": "shell",
+			"command": "python src/chatbot.py",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+		},
+		{
+			"label": "Run Server",
+			"type": "shell",
+			"command": "python src/server.py"
+		}
+	]
+}

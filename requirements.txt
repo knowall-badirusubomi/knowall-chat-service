@@ -1,0 +1,12 @@
+flask
+flask-socketio
+eventlet==0.30.2
+gunicorn
+jwt
+flask_caching
+redis
+werkzeug
+google-generativeai
+langchain-community
+langchain-google-genai
+langchain-text-splitters

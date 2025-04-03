@@ -1,0 +1,6 @@
+{
+	"scripts": {
+		"chat": "python src/chatbot.py",
+		"server": "python src/server.py"
+	}
+}
