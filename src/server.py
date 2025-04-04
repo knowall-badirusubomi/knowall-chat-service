@@ -1,37 +1,34 @@
 import os
 from flask_caching import Cache
 import redis
-from flask import Flask, jsonify, request, application
+from flask import Flask, jsonify, request
 from flask_socketio import SocketIO, disconnect, emit
 import subprocess
 from werkzeug.wrappers import Request, Response, ResponseStream
-from jwt import (
-    JWT,
-    jwk_from_dict,
-    jwk_from_pem,
-)
-from jwt.exceptions import (ExpiredSignatureError, InvalidTokenError)
+import jwt
+from dotenv import load_dotenv
 
-
-        
+load_dotenv()  # take environment variables
+JWT_SECRET_TOKEN = os.getenv('JWT_SECRET_TOKEN')
+# Initialize Redis client
+redis_client = redis.Redis(host='localhost', port=6379, db=0)
 
 class ChatFlaskApp(Flask):
-    def __init__(self, name, jwtInstance):
+    def __init__(self, name):
         super().__init__(name)
         self.name = name
-        self.jwtInstance = jwtInstance
-        self.jwtSecret = os.environ["JWT_SECRET_KEY"]
+        self.jwtSecret = JWT_SECRET_TOKEN
+        self.cache = Cache(app=self)
 
-        app.wsgi_app = AuthMiddleware(app.wsgi_app)
-        app.config['CACHE_TYPE'] = 'redis'
-        app.config['CACHE_REDIS_HOST'] = 'localhost'
-        app.config['CACHE_REDIS_PORT'] = 6379
-        app.config['CACHE_REDIS_DB'] = 0
-
+        self.wsgi_app = AuthMiddleware(self.wsgi_app, self.cache)
+        self.config['CACHE_TYPE'] = 'redis'
+        self.config['CACHE_REDIS_HOST'] = 'localhost'
+        self.config['CACHE_REDIS_PORT'] = 6379
+        self.config['CACHE_REDIS_DB'] = 0
 
 class AuthMiddleware:
      
-    def __init__(self, app: ChatFlaskApp, cache):
+    def __init__(self, app, cache):
         self.app = app
         self.cache = cache
 
@@ -39,24 +36,29 @@ class AuthMiddleware:
         request = Request(environ)
         token = request.authorization['x-access-key']
 
-        '''Check cache for valid jwt'''
-        authorized = True
-
         try:
-            header_data = self.app.jwtInstance.get_unverified_header(token)
-            payload = self.app.jwtInstance.decode(
+            payload = jwt.decode(
                 token,
-                key=self.app.jwtSecret,
-                algorithms=[header_data['alg'], ]
+                key=JWT_SECRET_TOKEN,
+                algorithms=['HS256']
             )
             return self.app(environ, start_response)
-        except ExpiredSignatureError as error:
+        except Exception as error:
             res = Response(u'Invalid access key', mimetype='text/plain', status=401)
             return res(environ, start_response)
 
 
-@application.route('/chats/', methods=['GET'])
-@cache.cached(timeout=60, key_prefix='items')
+
+
+Chats = {}
+app = ChatFlaskApp(__name__)
+# cache  = Cache(app=app)
+socketio = SocketIO(app,debug=True,cors_allowed_origins='*',async_mode='threading')
+# Initialize Flask-Caching with Redis
+
+
+@app.route('/chats/', methods=['GET'])
+@app.cache.cached(timeout=60, key_prefix='items')
 def get_chats():
       # Check if the response is already cached
       cached_response = redis_client.get('chats')
@@ -75,7 +77,7 @@ def get_chats():
 
     #   return jsonify({'message': 'Chats retrieved successfully'})
 
-@application.route('/chats/:sessionId', methods=['POST'])
+@app.route('/chats/:sessionId', methods=['POST'])
 def add_item():
       # Get the item name from the request body
       item_name = request.json.get('userPrompt')
@@ -84,17 +86,18 @@ def add_item():
       # ...
 
       # Delete the cached response to invalidate the cache
-      cache.delete('items')
+      app.cache.delete('items')
 
       return jsonify({'message': 'Item added successfully'})
 
 @socketio.on("chat")
 def handleChat(data):
-
-    if request.sid not in {"sdsd":"sdsd"}:
+    agentSession = redis_client.hgetall(f"agent-session:{request.sid}")
+    if not agentSession:
         print("Agent not authenticated, disconnecting.")
         socketio.emit("unauthorized", room=request.sid)
         return disconnect()
+    
     # Some logic here
     emit("chatResponse", data, broadcast=True)
 
@@ -105,49 +108,29 @@ def onConnect():
 
 
 @socketio.on("authenticate")
-def authenticate(data):
-    auth_header = request.headers.get("Authorization")
-    if not auth_header:
-        print("No auth header provided")
-        return disconnect()
-
-    token = auth_header.split("Bearer ")[-1]  # Extract token
+def authenticate():
+    auth_token = request.authorization.token
 
     try:
-        user_data = app.jwtInstance.decode(token, os.environ["JWT_SECRET_KEY"], algorithms=["HS256"])
-        emit('authenticated', room=request.id)
-    except ExpiredSignatureError:
-        print("Token expired")
+        userData = jwt.decode(
+                auth_token,
+                key=app.jwtSecret,
+                algorithms=['HS256']
+            )
+        redis_client.hset(f"agent-session:{request.sid}",mapping={"id": userData["id"], "email" : userData["email"]})
+        emit('authenticated', room=request.sid)
+        
+
+    except Exception as e:
+        print(f"Token expired\nError: {e}")
         socketio.emit("unauthorized", room=request.sid)
         return disconnect()
-    except InvalidTokenError:
-        print("Invalid token")
-        socketio.emit("unauthorized", room=request.sid)
-        return disconnect()
-
-
-class Session:
-    def __init__(self, id=0):
-        self.id = id
 
 
 
 
 if __name__ =='__main__':
-
-    # Initialize Redis client
-    redis_client = redis.Redis(host='localhost', port=6379, db=0)
-
-    jwtInstance = JWT()
-    app = ChatFlaskApp(__name__, jwtInstance)
-    socketio = SocketIO(app,debug=True,cors_allowed_origins='*',async_mode='eventlet')
-
-    #Temp DB
-    Chats = {}
-
-    # Initialize Flask-Caching with Redis
-    cache  = Cache(app=app)
-    cache.init_app(app)
+    # cache.init_app(app)
 
     
     #Start Server

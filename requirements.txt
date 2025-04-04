@@ -2,7 +2,7 @@ flask
 flask-socketio
 eventlet==0.30.2
 gunicorn
-jwt
+pyjwt
 flask_caching
 redis
 werkzeug

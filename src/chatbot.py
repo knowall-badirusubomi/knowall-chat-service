@@ -71,7 +71,7 @@ class SessionManager:
         for sid in inactive_sessions:
             del self.sessions[sid]
 
-class ErcaspayRAG:
+class RAGEngine:
     def __init__(self):
         self.embeddings = GoogleGenerativeAIEmbeddings(
             model="models/embedding-001",
@@ -211,7 +211,7 @@ Answer:"""
 def main():
     
     # Initialize RAG system
-    rag = ErcaspayRAG()
+    rag = RAGEngine()
     
     # Load and process documents
     print("Loading and processing documents...")
