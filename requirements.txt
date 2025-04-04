@@ -10,3 +10,5 @@ google-generativeai
 langchain-community
 langchain-google-genai
 langchain-text-splitters
+gevent
+gevent-websocket
